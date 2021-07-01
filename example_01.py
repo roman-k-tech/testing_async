@@ -1,42 +1,44 @@
 import socket
-from select import select
+import selectors
 
-to_monitor = []
+selector = selectors.DefaultSelector()
 
-serer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-serer_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-serer_socket.bind(('localhost', 5000))
-serer_socket.listen()
+
+def server():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(('localhost', 5000))
+    server_socket.listen()
+
+    selector.register(fileobj=server_socket, events=selectors.EVENT_READ, data=accept_connection)
 
 
 def accept_connection(server_socket):
-    client_socket, addr = serer_socket.accept()
+    client_socket, addr = server_socket.accept()
     print('Connection from', addr)
-    to_monitor.append(client_socket)
+
+    selector.register(fileobj=client_socket, events=selectors.EVENT_READ, data=send_message)
 
 
 def send_message(client_socket):
     request = client_socket.recv(4096)
 
     if request:
-        responce = 'Hello world\n'.encode()
-        client_socket.send(responce)
+        response = 'Hello world\n'.encode()
+        client_socket.send(response)
     else:
+        selector.unregister(client_socket)
         client_socket.close()
 
 
 def event_loop():
     while True:
-        ready_to_read, _, _ = select(to_monitor, [], [])
-
-
-        for sock in ready_to_read:
-            if sock is serer_socket:
-                accept_connection(sock)
-            else:
-                send_message(sock)
+        events = selector.select()
+        for key, _ in events:
+            callback = key.data
+            callback(key.fileobj)
 
 
 if __name__ == '__main__':
-    to_monitor.append(serer_socket)
+    server()
     event_loop()
